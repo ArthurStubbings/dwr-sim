@@ -1,8 +1,11 @@
 \documentclass[11pt,a4paper]{article}
 
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
 \usepackage[a4paper, top=22mm, bottom=22mm, left=22mm, right=22mm]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{microtype}
 \usepackage{parskip}
@@ -46,13 +49,13 @@
 % ── Abstract ─────────────────────────────────────────────────────────────────
 \textbf{Abstract.}\;
 A physics-based computational model is presented for the drying of a
-durable-water-repellent (DWR) wash-in re-treatment on a woven textile.
+durable water repellent (DWR) wash-in re-treatment on a woven textile.
 The model couples a 1D binary-colloid evaporation solver — derived from the
-Routh/Russel film-Péclet framework — to an idealised plain-weave unit cell,
+Routh/Russel film-P\'{e}clet framework — to an idealised plain-weave unit cell,
 and outputs a predicted water-beading performance index.
 The central finding is that capillary pooling draws the dispersion into the
 inter-yarn interstices, producing locally thick residual films with a high
-film Péclet number; the functional polymer is therefore swept toward the
+film P\'{e}clet number; the functional polymer is therefore swept toward the
 drying surface and buried rather than forming a usable repellent film.
 The exposed yarn crowns — the surfaces a raindrop actually rests on — are
 consequently starved of polymer.
@@ -66,13 +69,13 @@ drying rate that mitigates this crown-starvation mechanism.
 
 Consumer DWR wash-in re-treatments are aqueous colloidal dispersions: a
 functional water-repellent polymer (large particles, radius
-$r_L \sim \SI{150}{\nano\metre}$) co-suspended with a smaller
-carrier/surfactant phase ($r_S \sim \SI{40}{\nano\metre}$).
+$r_{L} \sim \SI{150}{\nano\metre}$) co-suspended with a smaller
+carrier/surfactant phase ($r_{S} \sim \SI{40}{\nano\metre}$).
 After a garment is washed in the treatment and removed, the water
 evaporates.
-As the air–liquid interface recedes it advects particles toward the drying
+As the air--liquid interface recedes it advects particles toward the drying
 substrate; diffusion opposes this concentration.
-The competition is governed by the film Péclet number,
+The competition is governed by the film P\'{e}clet number,
 
 \begin{equation}
   \mathrm{Pe} = \frac{v_\mathrm{evap}\,H_0}{D},
@@ -82,15 +85,15 @@ The competition is governed by the film Péclet number,
 \noindent
 where $v_\mathrm{evap}$ is the interface recession velocity, $H_0$ the
 initial film thickness, and $D$ the Stokes--Einstein diffusivity
-$k_BT/(6\pi\mu r)$.
+$k_{\mathrm{B}}T/(6\pi\mu r)$.
 Because $D \propto 1/r$, the large functional polymer has a smaller
 diffusivity and a correspondingly higher $\mathrm{Pe}$, making it more
 susceptible to burial.
 
-In a woven textile this drying physics operates on a non-uniform film: capillary pressure
-preferentially draws the dispersion into the high-curvature inter-yarn
-interstices, leaving a thicker residual film there than on the exposed yarn
-crowns.
+In a woven textile this drying physics operates on a non-uniform film:
+capillary pressure preferentially draws the dispersion into the
+high-curvature inter-yarn interstices, leaving a thicker residual film
+there than on the exposed yarn crowns.
 The locally thicker film means a locally higher $\mathrm{Pe}$ — exactly
 where you \emph{least} want the polymer to be buried.
 
@@ -108,7 +111,7 @@ The DWR film on the textile surface is modelled as a locally 1D evaporating
 binary film.
 The governing equation uses the conservative areal-density variable
 $q = h\phi$ on a mapped coordinate $x = z/h(t)$ that transforms the
-shrinking physical domain $[0, h(t)]$ onto a fixed grid $[0, 1]$:
+shrinking physical domain $[0,\,h(t)]$ onto a fixed grid $[0,\,1]$:
 
 \begin{equation}
   \frac{\partial q}{\partial t}
@@ -118,7 +121,7 @@ shrinking physical domain $[0, h(t)]$ onto a fixed grid $[0, 1]$:
   \label{eq:pde}
 \end{equation}
 
-The first term is Fickian diffusion with a mapped coefficient $D/h^2$
+The first term is Fickian diffusion with a mapped coefficient $D/h^{2}$
 (which diverges as $h \to 0$); the second is the moving-frame advective
 concentration driving stratification.
 The transformation was derived and symbolically verified with
@@ -128,11 +131,11 @@ caught during this check.
 The numerical scheme uses:
 \begin{itemize}\setlength\itemsep{1pt}
   \item Conservative finite-volume discretisation on fixed cell centres —
-        $\int q\,dx$ is conserved to $\lesssim\!10^{-12}$ (verified over 12
-        Péclet–step combinations).
+        $\int q\,\mathrm{d}x$ is conserved to $\lesssim 10^{-12}$ (verified
+        over 12 P\'{e}clet--step combinations).
   \item Backward-Euler implicit time stepping — unconditionally stable, so
-        the $D/h^2$ stiffness never limits the step size.
-  \item Stokes–Einstein diffusivity for each species.
+        the $D/h^{2}$ stiffness never limits the step size.
+  \item Stokes--Einstein diffusivity for each species.
 \end{itemize}
 
 \subsection{Plain-weave unit cell and performance model}
@@ -153,12 +156,12 @@ The pipeline from geometry to predicted performance is:
         functional polymer ending up at the \emph{air} side of the dried
         deposit rather than buried) is combined with the deposited mass per
         unit area to give an effective DWR areal coverage in $[0,1]$.
-  \item \textbf{Contact angle.} A Cassie–Baxter mixing rule between the
-        fully-coated ($\theta_\mathrm{DWR}=\SI{105}{\degree}$) and bare-yarn
-        ($\theta_\mathrm{bare}=\SI{65}{\degree}$) states yields the local
-        effective contact angle.
+  \item \textbf{Contact angle.} A Cassie--Baxter mixing rule between the
+        fully-coated ($\theta_{\mathrm{DWR}}=\SI{105}{\degree}$) and
+        bare-yarn ($\theta_{\mathrm{bare}}=\SI{65}{\degree}$) states yields
+        the local effective contact angle.
   \item \textbf{Beading index.} A crown-weighted spatial average of a sigmoid
-        beading score (centred at \SI{90}{\degree}, the wetting–beading
+        beading score (centred at \SI{90}{\degree}, the wetting--beading
         transition) produces a single index in $[0,1]$.
         This is a \emph{relative} metric for ranking processing conditions,
         not an absolute contact-angle prediction.
@@ -169,7 +172,7 @@ The pipeline from geometry to predicted performance is:
 
 \subsection{Drying profiles and stratification}
 
-\begin{figure}[h]
+\begin{figure}[ht]
   \centering
   \includegraphics[width=0.96\linewidth]{../figures/fig1_drying_profiles.png}
   \caption{Volume-fraction profiles through the film depth at end of drying
@@ -181,38 +184,39 @@ The pipeline from geometry to predicted performance is:
   \label{fig:profiles}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[ht]
   \centering
   \includegraphics[width=0.80\linewidth]{../figures/fig2_stratification_map.png}
   \caption{Stratification index (difference in centre-of-mass height between
     small and large species, normalised by final film height) as a function
     of $\mathrm{Pe}$. The index rises monotonically from $\approx 0$ at low
     $\mathrm{Pe}$ to $>0.18$ at high $\mathrm{Pe}$, reproducing the
-    qualitative behaviour of the Routh/Russel and Fortini binary-stratification
-    frameworks.}
+    qualitative behaviour of the Routh/Russel and Fortini
+    binary-stratification frameworks.}
   \label{fig:stratmap}
 \end{figure}
 
 Fig.~\ref{fig:profiles} shows the functional-polymer distribution at low and
 high $\mathrm{Pe}$.
 At low $\mathrm{Pe}$ (slow drying or thin film) the deposit is near-uniform;
-at high $\mathrm{Pe}$ the large species is swept toward the film surface during
-drying and then buried against the substrate as the film collapses — exactly
-the condition that degrades beading.
+at high $\mathrm{Pe}$ the large species is swept toward the film surface
+during drying and then buried against the substrate as the film collapses —
+exactly the condition that degrades beading.
 Fig.~\ref{fig:stratmap} confirms that the stratification index rises
 monotonically with $\mathrm{Pe}$, consistent with the Fortini et al.\
 binary-stratification prediction.
 
 \subsection{Weave geometry and the pooling map}
 
-\begin{figure}[h]
+\begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{../figures/fig3_unit_cell.png}
   \caption{Plain-weave unit-cell geometry. \textit{Left:} surface elevation
     (crowns bright, valleys dark). \textit{Centre:} capillary residual-film
     thickness map — film depth increases from $\approx\SI{30}{\micro\metre}$
-    on crowns to $\approx\SI{135}{\micro\metre}$ in interstices. \textit{Right:}
-    local film Péclet number; interstices are the highest-Pe zones.}
+    on crowns to $\approx\SI{135}{\micro\metre}$ in interstices.
+    \textit{Right:} local film P\'{e}clet number; interstices are the
+    highest-Pe zones.}
   \label{fig:unitcell}
 \end{figure}
 
@@ -224,21 +228,22 @@ local $\mathrm{Pe}$, making them the strongest burial zones.
 
 \subsection{Crown starvation}
 
-\begin{figure}[h]
+\begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{../figures/fig4_deposition.png}
   \caption{Spatial deposition results at moderate polymer loading
-    ($\phi_0=0.045$). \textit{Left:} effective DWR coverage. \textit{Right:}
-    predicted contact-angle map (Cassie–Baxter). Valley contact angles
-    ($\approx\SI{95}{\degree}$) exceed crown contact angles
-    ($\approx\SI{87}{\degree}$) — the crowns are starved of functional
+    ($\phi_{0}=0.045$). \textit{Left:} effective DWR coverage.
+    \textit{Right:} predicted contact-angle map (Cassie--Baxter). Valley
+    contact angles ($\approx\SI{94}{\degree}$) exceed crown contact angles
+    ($\approx\SI{86}{\degree}$) — the crowns are starved of functional
     polymer despite carrying the full load of raindrop contact.}
   \label{fig:deposition}
 \end{figure}
 
 Fig.~\ref{fig:deposition} is the central result.
-At moderate polymer loading the contact angle is \emph{higher in the valleys}
-than on the crowns.
+At moderate polymer loading the contact angle is \emph{higher in the
+valleys} than on the crowns ($\approx\SI{94}{\degree}$ vs.\
+$\approx\SI{86}{\degree}$).
 The thick-film interstices accumulate total polymer but bury it;
 the thinner-film crowns dry more uniformly but receive less total material.
 The net outcome is crown starvation — a known failure mode of consumer
@@ -246,12 +251,13 @@ re-treatment that the model captures and quantifies.
 
 \subsection{Process window}
 
-\begin{figure}[h]
+\begin{figure}[ht]
   \centering
   \includegraphics[width=0.78\linewidth]{../figures/fig5_process_window.png}
   \caption{Beading index over the 2D process space of polymer loading
-    $\phi_0$ and evaporation rate. High index (bright) requires adequate
-    loading \emph{and} slow drying. Dashed contour marks the $0.70$ threshold.}
+    $\phi_{0}$ and evaporation rate. High index (bright) requires adequate
+    loading \emph{and} slow drying. Dashed contour marks the $0.75$
+    threshold.}
   \label{fig:procwin}
 \end{figure}
 
@@ -263,16 +269,16 @@ rate;
 \textbf{(ii)} fast/hot drying — high $\mathrm{Pe}$ everywhere drives burial,
 suppressing usable coverage even at high loading;
 \textbf{(iii)} the process sweet spot — moderate-to-high loading
-($\phi_0 \gtrsim 0.07$) combined with slow, cool drying
-(low evaporation rate), giving beading index $>0.75$.
+($\phi_{0} \gtrsim 0.07$) combined with slow, cool drying (low evaporation
+rate), giving beading index $>0.75$.
 
 % ── 4. Implications ──────────────────────────────────────────────────────────
 \section{Implications for Materials Development and QA}
 
 \textbf{Formulation.}\;
-Polymer loading is the most robust lever: increasing $\phi_0$ from
+Polymer loading is the most robust lever: increasing $\phi_{0}$ from
 \num{0.045} to \num{0.09} raises the beading index from $\approx 0.35$ to
-$\approx 0.75$ across all drying rates tested.
+$\approx 0.75$ at slow drying rates.
 However, loading alone cannot compensate for very fast drying — the
 fundamental burial mechanism sets a ceiling.
 
@@ -325,29 +331,35 @@ for the relative beading index.
 % ── 6. Conclusions ────────────────────────────────────────────────────────────
 \section{Conclusions}
 
-A physics-based model has been built and validated against the known
+A physics-based model has been built and verified against the known
 theoretical behaviour of colloidal-film stratification.
 The central finding — that capillary pooling in the inter-yarn interstices
-drives a high-Péclet burial of functional polymer, starving the exposed yarn
-crowns — is mechanistically clear, quantified, and locked in a reproducible
-computational test.
-The process-window output provides an actionable, two-parameter design guide:
-adequate polymer loading combined with slow, cool drying is both necessary
-and sufficient for good predicted beading performance.
-The model is openly available with full source code, 12 passing validation
-tests, and an interactive dashboard for real-time parameter exploration.
+drives a high-P\'{e}clet burial of functional polymer, starving the exposed
+yarn crowns — is mechanistically clear, quantified, and reproducible in a
+locked computational test.
+The process-window output provides an actionable, two-parameter design
+guide: adequate polymer loading ($\phi_{0} \gtrsim 0.07$) combined with
+slow, cool drying is both necessary and sufficient for good predicted
+beading performance.
+The immediate next step to ground this model is a two-temperature
+spray/bead test, which would anchor the relative beading index to absolute
+contact-angle measurements and close the loop between computation and
+experiment.
+The model is openly available with full source code, 12 passing
+verification tests, and an interactive dashboard for real-time parameter
+exploration.
 
 \vspace{8pt}
 \hrule
 \vspace{6pt}
 {\small
 \textbf{Software.}
-Python 3 with NumPy, SciPy, Matplotlib, and SymPy.
-All results are predictions of a computational model with qualitative
-validation against the colloidal-film stratification literature.
+Python~3 with NumPy, SciPy, Matplotlib, and SymPy.
+All results are predictions of a computational model, verified against the
+known theoretical behaviour of the colloidal-film stratification literature.
 No experimental DWR measurements were performed.\\[3pt]
 \textbf{Scientific basis.}
-Routh \& Russel (evaporation-driven colloidal-film drying, film Péclet
+Routh \& Russel (evaporation-driven colloidal-film drying, film P\'{e}clet
 framework);
 Fortini et al.\ (binary stratification, small-on-top mechanism);
 Cassie \& Baxter (wetting on heterogeneous surfaces);
