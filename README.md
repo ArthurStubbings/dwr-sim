@@ -1,5 +1,7 @@
 # DWR Re-Proofer Drying & Coating Uniformity Simulator
 
+**[Live dashboard →](https://arthurstubbings.github.io/dwr-sim/)** &nbsp;|&nbsp; **[Technical report (PDF)](report/dwr_sim_report.pdf)**
+
 A physics-based computational model of how a durable-water-repellent (DWR)
 wash-in re-treatment dries on a woven textile — from colloidal stratification
 in the evaporating film through to predicted water-beading performance across

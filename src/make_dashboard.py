@@ -5,7 +5,7 @@ Precomputes a parameter sweep over the DWR coating model and bakes the
 results into a single self-contained interactive HTML file.
 
 Run from src/:  python make_dashboard.py
-Output:         ../dashboard.html   (open in any browser; no server needed)
+Output:         ../index.html   (open in any browser; no server needed)
 
 Sweep grid: 6 polymer loadings × 6 drying rates × 3 yarn crimps × 3
 particle sizes = 324 model evaluations. Each stores a 32×32 coverage map
@@ -28,7 +28,7 @@ from drying_1d import DryingParameters
 from weave_cell import WeaveParameters, beading_performance_index
 
 OUTDIR = os.path.join(os.path.dirname(__file__), "..")
-OUTFILE = os.path.join(OUTDIR, "dashboard.html")
+OUTFILE = os.path.join(OUTDIR, "index.html")
 MAP_GRID = 32   # spatial resolution of each stored heatmap
 
 # ── Parameter grid ────────────────────────────────────────────────────────────
