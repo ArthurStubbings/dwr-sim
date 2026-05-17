@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.ipynb_checkpoints/
+.venv/
+venv/
+*.egg-info/
+
+# Screenshots
+Screenshot*.png
+
+# LaTeX build artefacts
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz
+
+# Kickoff prompt and internal notes
+CLAUDE_CODE_KICKOFF_PROMPT.txt
+STATUS.md
