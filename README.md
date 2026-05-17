@@ -195,7 +195,7 @@ measurements.
 | SI monotonically increases with Pe | PASS (4 points) |
 | Beading rises with polymer concentration | PASS (0.11 → 0.82) |
 | Under-loaded dispersion fails to bead (CA < 90°) | PASS |
-| Crown CA < valley CA (pooling-starves-crowns) | PASS (87 ° vs 95 °) |
+| Crown CA < valley CA (pooling-starves-crowns) | PASS (86° vs 94°) |
 | Beading index in [0,1] and finite | PASS |
 
 The stratification behaviour (small-on-top at high Pe) is consistent with the
