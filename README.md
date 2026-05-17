@@ -32,11 +32,12 @@ stratify differentially — a mechanism well-established in the colloidal-film
 literature (Routh/Russel evaporation framework; Fortini et al. binary
 stratification).
 
-That drying and redistribution step is also exactly the physics of my MEng
-dissertation on stratification in drying binary colloidal dispersions. This
-project transplants those same governing equations from a flat colloidal film
-onto a woven textile, coupling stratification physics to a spatial DWR
-deposition model and a predicted water-beading performance index.
+That drying and redistribution step is also exactly the physics underlying my
+MEng dissertation at Loughborough University: *Using Machine Learning to Aid
+the Research of Stratification of Binary Colloidal Solutions*. This project
+transplants those same governing equations from a flat colloidal film onto a
+woven textile, coupling stratification physics to a spatial DWR deposition
+model and a predicted water-beading performance index.
 
 The question the model answers:
 
@@ -313,12 +314,17 @@ results.
 
 ## About this Project
 
-This is a portfolio project supporting an application to **Arc'teryx — Raw
-Materials Developer 1**. The goal is to demonstrate that strong computational
-materials science skills (colloidal physics, numerical PDE solving,
-validation-first development) can be applied honestly and productively to
-textile performance problems — bridging the gap between a dissertation on
-colloidal stratification and the real-world materials challenges in DWR
-coating quality and consistency.
+I studied Materials Science at Loughborough University, where my MEng
+dissertation used machine learning to investigate stratification in drying
+binary colloidal dispersions. The physics in that work — evaporation-driven
+particle redistribution, film Péclet number, size-dependent diffusion — maps
+directly onto the problem of how a DWR re-proofer deposits on a textile, so
+the connection felt natural to explore computationally.
 
-*Arthur Stubbings · MEng Materials Science*
+The personal motivation is straightforward: I ski a lot, which means I spend
+a fair amount of time re-waterproofing jackets and trousers. Watching a
+re-proofer dry and wondering whether it was actually ending up where it needed
+to is the kind of question that turns into a side project when you have the
+right physics background. This is that project.
+
+*Arthur Stubbings · MEng Materials Science, Loughborough University*
