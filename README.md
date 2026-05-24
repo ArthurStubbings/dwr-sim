@@ -12,6 +12,11 @@ All results are *predictions of a computational model* with qualitative
 validation against the colloidal-film stratification literature.
 No experimental DWR measurements were performed.
 
+| Version | What changed |
+|---|---|
+| **v1.1** | DWR chemistry comparison (C8 → C6 → silicone → dendrimer); chemistry selector in dashboard; fig6; parallel sweep |
+| **v1.0** | Initial release — 1D drying solver, plain-weave unit cell, interactive dashboard, 5 figures, technical report |
+
 ---
 
 ## Motivation
@@ -181,6 +186,23 @@ This is the model's actionable output for materials development and QA.
 
 ![Process window](figures/fig5_process_window.png)
 
+### Chemistry comparison: PFC-free process window
+
+Consumer DWR chemistry is under significant regulatory pressure — C8
+fluorocarbons are banned in most markets, C6 is under active review, and
+the industry is moving toward PFC-free alternatives (silicone dispersions,
+dendrimer/bio-wax systems). These chemistries have lower intrinsic contact
+angles and larger particle sizes (slower diffusion, higher local Péclet
+number at the same drying conditions) — a double penalty.
+
+The four-panel comparison maps the process window for each chemistry class,
+showing directly how the high-performance region (beading index > 0.75)
+shrinks as you move from legacy fluorinated to PFC-free chemistry. The
+dashboard lets you switch between chemistries interactively; the process
+window and contact-angle maps update live.
+
+![Chemistry comparison](figures/fig6_chemistry_comparison.png)
+
 ---
 
 ## Validation
@@ -257,7 +279,7 @@ cd src
 python test_drying_1d.py
 python test_weave_cell.py
 
-# Regenerate all 5 figures (fig5 process window ≈ 70 s)
+# Regenerate all 6 figures (fig5 process window ≈ 70 s, fig6 ≈ 120 s)
 python make_figures.py
 
 # Quick smoke test of the physics core
@@ -275,19 +297,21 @@ python run_all.py
 src/
   drying_1d.py          1D binary colloid drying solver (physics core)
   weave_cell.py         plain-weave unit cell + beading performance model
+                        + ChemistryProfile dataclass + CHEMISTRY_PROFILES
   test_drying_1d.py     6 physics-core tests
   test_weave_cell.py    6 textile-layer tests
-  make_figures.py       generates figures/fig1..5
+  make_figures.py       generates figures/fig1..6
+  make_dashboard.py     precomputes 432-run sweep → index.html (GitHub Pages)
 figures/
   fig1_drying_profiles.png
   fig2_stratification_map.png
   fig3_unit_cell.png
   fig4_deposition.png
   fig5_process_window.png
+  fig6_chemistry_comparison.png   (v1.1)
 report/
   dwr_sim_report.pdf    short technical report (4–6 pages)
 requirements.txt        numpy, scipy, matplotlib, sympy
-STATUS.md               full project context and handoff notes
 ```
 
 ---

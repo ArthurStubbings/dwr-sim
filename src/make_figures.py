@@ -24,6 +24,7 @@ from drying_1d import DryingParameters, solve_binary_drying
 from weave_cell import (
     WeaveParameters,
     beading_performance_index,
+    CHEMISTRY_PROFILES,
 )
 
 FIGDIR = os.path.join(os.path.dirname(__file__), "..", "figures")
@@ -225,10 +226,91 @@ def fig5_process_window():
     print("wrote", out)
 
 
+def fig6_chemistry_comparison():
+    """2×2 grid of process windows for the four DWR chemistry classes.
+
+    Shows how the high-performance region (beading index > 0.75) shrinks
+    as you move from legacy fluorinated to PFC-free chemistry — the
+    process window narrows and the margin for crown starvation grows.
+    """
+    chemistries = list(CHEMISTRY_PROFILES.values())
+    phis = np.linspace(0.015, 0.16, 8)
+    vevs = np.geomspace(2e-8, 1.2e-6, 8)
+
+    # Compute all four grids (fast=True)
+    grids = []
+    for ch in chemistries:
+        Z = np.zeros((len(phis), len(vevs)))
+        for i, ph in enumerate(phis):
+            for j, v in enumerate(vevs):
+                bp = DryingParameters(evap_velocity_m_s=v, phi_large_0=ph,
+                                      r_large_m=ch.r_large_nm * 1e-9)
+                wp = WeaveParameters(intrinsic_contact_angle_deg=ch.intrinsic_ca_deg)
+                o = beading_performance_index(wp, bp, fast=True)
+                Z[i, j] = o["beading_index"]
+        grids.append(Z)
+        print(f"  {ch.label} done")
+
+    STATUS_COLOR = {"PFAS — banned / phased out": "#f87171",
+                    "PFAS — under regulation":    "#fbbf24",
+                    "PFC-free":                   "#34d399"}
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7.5), sharex=True, sharey=True)
+    axes = axes.ravel()
+
+    # Shared colormap over [0, 1]
+    norm = plt.Normalize(0, 1)
+    sm = plt.cm.ScalarMappable(cmap="YlGnBu_r", norm=norm)
+
+    for ax, ch, Z in zip(axes, chemistries, grids):
+        cf = ax.contourf(vevs, phis, Z, levels=12, cmap="YlGnBu_r",
+                         norm=norm)
+        cs = ax.contour(vevs, phis, Z, levels=[0.5, 0.75],
+                        colors="k", linewidths=0.7, linestyles=["--", "-"])
+        ax.clabel(cs, fmt="%.2f", fontsize=7.5)
+        ax.set_xscale("log")
+
+        dot_col = STATUS_COLOR.get(ch.status, "#c8d4e6")
+        ax.set_title(
+            f"{ch.label}\n"
+            r"$\theta_\mathrm{DWR}$"
+            f" = {ch.intrinsic_ca_deg:.0f}°,  "
+            r"$r_L$"
+            f" = {ch.r_large_nm:.0f} nm",
+            fontsize=9.5, color=INK, pad=6,
+        )
+        # Status badge
+        ax.text(0.98, 0.04, ch.status, transform=ax.transAxes,
+                fontsize=7.5, ha="right", va="bottom",
+                color=dot_col, fontweight="bold")
+        ax.grid(False)
+
+    for ax in axes[2:]:
+        ax.set_xlabel("Evaporation rate  (m/s)  ~ drying temperature",
+                      fontsize=9)
+    for ax in axes[::2]:
+        ax.set_ylabel(r"Polymer loading  $\phi_0$", fontsize=9)
+
+    fig.suptitle(
+        "Process window by DWR chemistry  —  beading index over (loading × drying rate)\n"
+        "Contours at 0.50 (dashed) and 0.75 (solid).  "
+        "PFC-free chemistries have a narrower high-performance region.",
+        fontsize=10, color=INK, y=1.01,
+    )
+    fig.colorbar(sm, ax=axes, label="Beading index (0–1)",
+                 shrink=0.6, pad=0.02)
+    fig.tight_layout()
+    out = os.path.join(FIGDIR, "fig6_chemistry_comparison.png")
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print("wrote", out)
+
+
 if __name__ == "__main__":
     fig1_drying_profiles()
     fig2_stratification_map()
     fig3_unit_cell()
     fig4_deposition()
     fig5_process_window()
+    fig6_chemistry_comparison()
     print("All figures written to", os.path.abspath(FIGDIR))

@@ -7,9 +7,9 @@ results into a single self-contained interactive HTML file.
 Run from src/:  python make_dashboard.py
 Output:         ../index.html   (open in any browser; no server needed)
 
-Sweep grid: 6 polymer loadings × 6 drying rates × 3 yarn crimps × 3
-particle sizes = 324 model evaluations. Each stores a 32×32 coverage map
-and contact-angle map encoded as uint8 base64. Total HTML file ~2-3 MB.
+Sweep grid: 4 DWR chemistries × 6 polymer loadings × 6 drying rates × 3
+yarn crimps = 432 model evaluations. Each stores a 32×32 coverage map
+and contact-angle map encoded as uint8 base64. Total HTML file ~1-2 MB.
 
 The HTML file works offline, requires no running server, and is hostable
 on GitHub Pages. Sliders index the precomputed grid — instant response.
@@ -21,11 +21,12 @@ import json
 import time
 import base64
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor
 
 # Run from src/
 sys.path.insert(0, os.path.dirname(__file__))
 from drying_1d import DryingParameters
-from weave_cell import WeaveParameters, beading_performance_index
+from weave_cell import WeaveParameters, beading_performance_index, CHEMISTRY_PROFILES
 
 OUTDIR = os.path.join(os.path.dirname(__file__), "..")
 OUTFILE = os.path.join(OUTDIR, "index.html")
@@ -52,20 +53,21 @@ for v in EVAP_VALUES:
 CRIMP_VALUES = [0.30, 0.50, 0.70]
 CRIMP_LABELS = ["Low — even film", "Medium — pooling", "High — crown drainage"]
 
-RADIUS_VALUES = [70e-9, 110e-9, 160e-9]   # r_large_m
-RADIUS_LABELS = ["70 nm", "110 nm", "160 nm"]
+CHEM_KEYS   = list(CHEMISTRY_PROFILES.keys())            # ['c8','c6','silicone','dendrimer']
+CHEM_LABELS = [CHEMISTRY_PROFILES[k].label for k in CHEM_KEYS]
 
 N_PHI   = len(PHI_VALUES)
 N_EVAP  = len(EVAP_VALUES)
 N_CRIMP = len(CRIMP_VALUES)
-N_RAD   = len(RADIUS_VALUES)
-N_TOTAL = N_PHI * N_EVAP * N_CRIMP * N_RAD
+N_CHEM  = len(CHEM_KEYS)
+N_TOTAL = N_CHEM * N_PHI * N_EVAP * N_CRIMP
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def run_idx(pi, ei, ci, ri):
-    return pi * N_EVAP * N_CRIMP * N_RAD + ei * N_CRIMP * N_RAD + ci * N_RAD + ri
+def run_idx(chi, pi, ei, ci):
+    """Chemistry is the outermost dimension."""
+    return chi * N_PHI * N_EVAP * N_CRIMP + pi * N_EVAP * N_CRIMP + ei * N_CRIMP + ci
 
 
 def encode_map(arr2d, vmin, vmax):
@@ -80,108 +82,116 @@ def encode_bool_map(bool2d):
     return base64.b64encode(bool2d.astype(np.uint8).tobytes()).decode("ascii")
 
 
+# ── Parallel worker (must be module-level for multiprocessing pickling) ───────
+
+def _compute_run(args):
+    chem_key, phi, evap, crimp, vtc, base_film, map_grid = args
+    import sys, os as _os
+    sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    from weave_cell import WeaveParameters, beading_performance_index, CHEMISTRY_PROFILES
+    from drying_1d import DryingParameters
+    ch = CHEMISTRY_PROFILES[chem_key]
+    wp = WeaveParameters(
+        grid=map_grid, yarn_crimp=crimp,
+        valley_to_crown_film=vtc, base_film_m=base_film,
+        film_ref_m=30e-6,
+        intrinsic_contact_angle_deg=ch.intrinsic_ca_deg,
+    )
+    bp = DryingParameters(
+        evap_velocity_m_s=evap, phi_large_0=phi,
+        r_large_m=ch.r_large_nm * 1e-9,
+    )
+    out = beading_performance_index(wp, bp, fast=True)
+    return {
+        "bi":  round(float(out["beading_index"]), 3),
+        "cca": round(float(out["crown_contact_angle_deg"]), 1),
+        "vca": round(float(out["valley_contact_angle_deg"]), 1),
+        "mca": round(float(out["mean_contact_angle_deg"]), 1),
+        "cov": out["coverage"].copy(),
+        "ca":  out["contact_angle"].copy(),
+    }
+
+
 # ── Sweep ─────────────────────────────────────────────────────────────────────
 
 def run_sweep():
-    print(f"Running {N_TOTAL} model evaluations (grid={MAP_GRID}, fast=True)…")
+    f0, f1 = CRIMP_VALUES[0], CRIMP_VALUES[-1]
+    CRIMP_VTC       = {c: 2.5 + (c - f0) / (f1 - f0) * 5.0        for c in CRIMP_VALUES}
+    CRIMP_BASE_FILM = {c: 42e-6 - (c - f0) / (f1 - f0) * 21e-6    for c in CRIMP_VALUES}
+
+    # Geometry maps depend only on crimp — compute cheaply upfront.
+    pore_b64   = []
+    height_b64 = []
+    for crimp in CRIMP_VALUES:
+        wp0 = WeaveParameters(grid=MAP_GRID, yarn_crimp=crimp,
+                              valley_to_crown_film=CRIMP_VTC[crimp],
+                              base_film_m=CRIMP_BASE_FILM[crimp], film_ref_m=30e-6)
+        out0 = beading_performance_index(wp0, DryingParameters(phi_large_0=0.06), fast=True)
+        pore_b64.append(encode_bool_map(out0["pore_mask"]))
+        height_b64.append(encode_map(out0["height"], 0.0, 1.0))
+
+    # Build ordered task list matching run_idx(chi, pi, ei, ci).
+    tasks, order = [], []
+    for chi, chem_key in enumerate(CHEM_KEYS):
+        for pi, phi in enumerate(PHI_VALUES):
+            for ei, evap in enumerate(EVAP_VALUES):
+                for ci, crimp in enumerate(CRIMP_VALUES):
+                    tasks.append((chem_key, phi, evap, crimp,
+                                  CRIMP_VTC[crimp], CRIMP_BASE_FILM[crimp], MAP_GRID))
+                    order.append(run_idx(chi, pi, ei, ci))
+
+    print(f"Running {N_TOTAL} evaluations in parallel (fast=True)…")
     t_start = time.time()
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(_compute_run, tasks))
+    elapsed = time.time() - t_start
+    print(f"Sweep complete in {elapsed:.0f}s ({elapsed/60:.1f} min)")
 
     beading_index = [0.0] * N_TOTAL
     crown_ca      = [0.0] * N_TOTAL
     valley_ca     = [0.0] * N_TOTAL
     mean_ca       = [0.0] * N_TOTAL
     coverage_b64  = [""] * N_TOTAL
-    ca_b64        = [""] * N_TOTAL
+    ca_raw        = [None] * N_TOTAL
 
-    # Pore mask and height map depend only on crimp (geometry).
-    pore_b64   = [""] * N_CRIMP
-    height_b64 = [""] * N_CRIMP
+    for res, idx in zip(results, order):
+        beading_index[idx] = res["bi"]
+        crown_ca[idx]      = res["cca"]
+        valley_ca[idx]     = res["vca"]
+        mean_ca[idx]       = res["mca"]
+        coverage_b64[idx]  = encode_map(res["cov"], 0.0, 1.0)
+        ca_raw[idx]        = res["ca"]
 
-    # We need a global CA min/max for a consistent colormap. Collect CA maps
-    # first as float arrays, then encode after computing the global range.
-    ca_raw = [None] * N_TOTAL
-
-    # Higher crimp = deeper channels = more pooling AND more crown drainage.
-    # valley_to_crown_film: 2.5 (low) → 7.5 (high) — deeper interstices hold more.
-    # base_film_m: 42µm (low) → 21µm (high) — polymer drains away from crowns.
-    # Together they conserve approximate total fluid (mean film thickness ≈ const).
-    f0, f1 = CRIMP_VALUES[0], CRIMP_VALUES[-1]
-    CRIMP_VTC      = {c: 2.5 + (c - f0) / (f1 - f0) * 5.0 for c in CRIMP_VALUES}
-    CRIMP_BASE_FILM = {c: (42e-6 - (c - f0) / (f1 - f0) * 21e-6) for c in CRIMP_VALUES}
-    # Results: vtc=2.5/base=42µm (low), vtc=5.0/base=31.5µm (mid), vtc=7.5/base=21µm (high)
-
-    count = 0
-    for ci, crimp in enumerate(CRIMP_VALUES):
-        for ri, r_large in enumerate(RADIUS_VALUES):
-            for pi, phi in enumerate(PHI_VALUES):
-                for ei, evap in enumerate(EVAP_VALUES):
-                    wp = WeaveParameters(grid=MAP_GRID, yarn_crimp=crimp,
-                                        valley_to_crown_film=CRIMP_VTC[crimp],
-                                        base_film_m=CRIMP_BASE_FILM[crimp],
-                                        film_ref_m=30e-6)
-                    bp = DryingParameters(
-                        evap_velocity_m_s=evap,
-                        phi_large_0=phi,
-                        r_large_m=r_large,
-                    )
-                    out = beading_performance_index(wp, bp, fast=True)
-
-                    idx = run_idx(pi, ei, ci, ri)
-                    beading_index[idx] = round(float(out["beading_index"]), 3)
-                    crown_ca[idx]      = round(float(out["crown_contact_angle_deg"]), 1)
-                    valley_ca[idx]     = round(float(out["valley_contact_angle_deg"]), 1)
-                    mean_ca[idx]       = round(float(out["mean_contact_angle_deg"]), 1)
-                    coverage_b64[idx]  = encode_map(out["coverage"], 0.0, 1.0)
-                    ca_raw[idx]        = out["contact_angle"].copy()
-
-                    # Store geometry once per crimp (at any phi/evap/radius).
-                    if pi == 0 and ei == 0 and ri == 0:
-                        pore_b64[ci]   = encode_bool_map(out["pore_mask"])
-                        height_b64[ci] = encode_map(out["height"], 0.0, 1.0)
-
-                    count += 1
-                    if count % 36 == 0:
-                        elapsed = time.time() - t_start
-                        rate = count / elapsed
-                        eta = (N_TOTAL - count) / rate
-                        print(f"  {count}/{N_TOTAL}  ({elapsed:.0f}s elapsed, "
-                              f"~{eta:.0f}s remaining)")
-
-    # Global CA range for consistent colormap.
-    valid_ca = [m.ravel() for m in ca_raw if m is not None]
-    all_ca = np.concatenate(valid_ca)
-    ca_min = float(np.percentile(all_ca, 2))
-    ca_max = float(np.percentile(all_ca, 98))
-    # Round to nearest 5° for cleaner labels.
-    ca_min = 5 * np.floor(ca_min / 5)
-    ca_max = 5 * np.ceil(ca_max / 5)
+    # Global CA range across all chemistries for a consistent colormap.
+    all_ca = np.concatenate([m.ravel() for m in ca_raw])
+    ca_min = float(5 * np.floor(np.percentile(all_ca, 2)  / 5))
+    ca_max = float(5 * np.ceil (np.percentile(all_ca, 98) / 5))
     print(f"CA colormap range: {ca_min:.0f}° – {ca_max:.0f}°")
-
-    for idx in range(N_TOTAL):
-        if ca_raw[idx] is not None:
-            ca_b64[idx] = encode_map(ca_raw[idx], ca_min, ca_max)
-
-    elapsed = time.time() - t_start
-    print(f"Sweep complete in {elapsed:.0f}s ({elapsed/60:.1f} min)")
+    ca_b64 = [encode_map(ca_raw[i], ca_min, ca_max) for i in range(N_TOTAL)]
 
     return {
         "params": {
-            "phi_values":   PHI_VALUES,
             "phi_labels":   PHI_LABELS,
-            "evap_values":  EVAP_VALUES,
             "evap_labels":  EVAP_LABELS,
-            "crimp_values": CRIMP_VALUES,
             "crimp_labels": CRIMP_LABELS,
-            "radius_values": [float(v) for v in RADIUS_VALUES],
-            "radius_labels": RADIUS_LABELS,
+            "chem_labels":  CHEM_LABELS,
         },
+        "chem_info": [
+            {"key":         k,
+             "label":       CHEMISTRY_PROFILES[k].label,
+             "intrinsic_ca": CHEMISTRY_PROFILES[k].intrinsic_ca_deg,
+             "r_large_nm":  CHEMISTRY_PROFILES[k].r_large_nm,
+             "status":      CHEMISTRY_PROFILES[k].status,
+             "description": CHEMISTRY_PROFILES[k].description}
+            for k in CHEM_KEYS
+        ],
         "grid_size":     MAP_GRID,
         "ca_min":        ca_min,
         "ca_max":        ca_max,
         "n_phi":         N_PHI,
         "n_evap":        N_EVAP,
         "n_crimp":       N_CRIMP,
-        "n_rad":         N_RAD,
+        "n_chem":        N_CHEM,
         "beading_index": beading_index,
         "crown_ca":      crown_ca,
         "valley_ca":     valley_ca,
@@ -258,6 +268,25 @@ header .subtitle a { color: var(--accent); text-decoration: none; }
   height: 4px;
 }
 .slider-value { min-width: 80px; text-align: right; color: var(--white); font-size: 11px; }
+
+/* Chemistry selector */
+.chem-row { display: flex; align-items: center; gap: 10px; grid-column: 1 / -1; }
+.chem-btns { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.chem-btn {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .1s, background .1s;
+}
+.chem-btn:hover { border-color: var(--accent); }
+.chem-btn.on { border-color: var(--accent); background: rgba(74,158,255,.12); color: var(--white); }
+.chem-info { font-size: 9px; color: var(--dim); padding-left: 4px; }
 
 /* Main viz row — flex:1 lets it absorb all remaining vertical space */
 .main-viz {
@@ -456,10 +485,10 @@ footer {
     <input type="range" id="sl-evap"  min="0" max="5" step="1" value="1">
     <span class="slider-value" id="lbl-evap">—</span>
   </div>
-  <div class="slider-row">
-    <span class="slider-label">Polymer particle radius r<sub>L</sub></span>
-    <input type="range" id="sl-rad"   min="0" max="2" step="1" value="1">
-    <span class="slider-value" id="lbl-rad">—</span>
+  <div class="chem-row">
+    <span class="slider-label">DWR chemistry</span>
+    <div class="chem-btns" id="chem-btns"></div>
+    <span class="chem-info" id="chem-info"></span>
   </div>
 </div>
 
@@ -658,14 +687,20 @@ function paintColorbar(canvas, colorStops) {
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
-const NP=DATA.n_phi, NE=DATA.n_evap, NC=DATA.n_crimp, NR=DATA.n_rad;
-let iP=2, iE=1, iC=1, iR=1;
+const NP=DATA.n_phi, NE=DATA.n_evap, NC=DATA.n_crimp, NCH=DATA.n_chem;
+let iP=2, iE=1, iC=1, iCh=0;
 
-function flatIdx(p,e,c,r){ return p*NE*NC*NR + e*NC*NR + c*NR + r; }
+function flatIdx(p,e,c,ch){ return ch*NP*NE*NC + p*NE*NC + e*NC + c; }
+
+const STATUS_COLOR = {
+  "PFAS — banned / phased out": "#f87171",
+  "PFAS — under regulation":    "#fbbf24",
+  "PFC-free":                        "#34d399",
+};
 
 // ── Process window ────────────────────────────────────────────────────────────
 // Bilinear interpolation to a finer grid for a smoother look.
-function paintProcessWindow(iP, iE, iC, iR) {
+function paintProcessWindow(iP, iE, iC, iCh) {
   const canvas = document.getElementById('process-canvas');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
@@ -685,10 +720,10 @@ function paintProcessWindow(iP, iE, iC, iR) {
       const ef = fx - e0;
       const pf = phiFrac - p0;
 
-      const v00 = DATA.beading_index[flatIdx(p0,e0,iC,iR)];
-      const v10 = DATA.beading_index[flatIdx(p1,e0,iC,iR)];
-      const v01 = DATA.beading_index[flatIdx(p0,e1,iC,iR)];
-      const v11 = DATA.beading_index[flatIdx(p1,e1,iC,iR)];
+      const v00 = DATA.beading_index[flatIdx(p0,e0,iC,iCh)];
+      const v10 = DATA.beading_index[flatIdx(p1,e0,iC,iCh)];
+      const v01 = DATA.beading_index[flatIdx(p0,e1,iC,iCh)];
+      const v11 = DATA.beading_index[flatIdx(p1,e1,iC,iCh)];
       const val = v00*(1-ef)*(1-pf) + v01*ef*(1-pf) + v10*(1-ef)*pf + v11*ef*pf;
 
       // Viridis-like: purple (low) → teal → green → yellow (high)
@@ -722,7 +757,7 @@ function paintProcessWindow(iP, iE, iC, iR) {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update() {
-  const idx = flatIdx(iP, iE, iC, iR);
+  const idx = flatIdx(iP, iE, iC, iCh);
   const bi  = DATA.beading_index[idx];
   const cca = DATA.crown_ca[idx];
   const vca = DATA.valley_ca[idx];
@@ -756,7 +791,13 @@ function update() {
   document.getElementById('lbl-phi').textContent   = DATA.params.phi_labels[iP];
   document.getElementById('lbl-evap').textContent  = DATA.params.evap_labels[iE];
   document.getElementById('lbl-crimp').textContent = DATA.params.crimp_labels[iC];
-  document.getElementById('lbl-rad').textContent   = DATA.params.radius_labels[iR];
+
+  // Chemistry info badge
+  const ch = DATA.chem_info[iCh];
+  const sc = STATUS_COLOR[ch.status] || 'var(--dim)';
+  const infoEl = document.getElementById('chem-info');
+  infoEl.textContent = `θ = ${ch.intrinsic_ca.toFixed(0)}°  ·  rₗ = ${ch.r_large_nm.toFixed(0)} nm  ·  ${ch.status}`;
+  infoEl.style.color = sc;
 
   // CA colorbar labels
   document.getElementById('ca-cmin').textContent = DATA.ca_min.toFixed(0)+'°';
@@ -767,18 +808,34 @@ function update() {
   paintHeatmap(document.getElementById('cov-canvas'), b64ToU8(DATA.coverage_b64[idx]), MAGMA, pore);
   paintHeatmap(document.getElementById('ca-canvas'),  b64ToU8(DATA.ca_b64[idx]),       DIVBR, pore);
 
-  paintProcessWindow(iP, iE, iC, iR);
+  paintProcessWindow(iP, iE, iC, iCh);
 }
 
 // ── Wire sliders ──────────────────────────────────────────────────────────────
 document.getElementById('sl-phi').addEventListener('input',   function(){ iP=+this.value; update(); });
 document.getElementById('sl-evap').addEventListener('input',  function(){ iE=+this.value; update(); });
 document.getElementById('sl-crimp').addEventListener('input', function(){ iC=+this.value; update(); });
-document.getElementById('sl-rad').addEventListener('input',   function(){ iR=+this.value; update(); });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 paintColorbar(document.getElementById('cov-cbar'), MAGMA);
 paintColorbar(document.getElementById('ca-cbar'),  DIVBR);
+
+// Build chemistry pill buttons
+const chemBtnsEl = document.getElementById('chem-btns');
+DATA.chem_info.forEach(function(ch, i) {
+  const btn = document.createElement('button');
+  btn.className = 'chem-btn' + (i === 0 ? ' on' : '');
+  btn.textContent = ch.label;
+  btn.dataset.idx = i;
+  btn.addEventListener('click', function() {
+    iCh = +this.dataset.idx;
+    document.querySelectorAll('.chem-btn').forEach(function(b){ b.classList.remove('on'); });
+    this.classList.add('on');
+    update();
+  });
+  chemBtnsEl.appendChild(btn);
+});
+
 update();
 </script>
 </body>

@@ -44,9 +44,88 @@ interview.
 from __future__ import annotations
 
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
+from typing import Dict
 
 from drying_1d import DryingParameters, solve_binary_drying
+
+
+@dataclass
+class ChemistryProfile:
+    """DWR chemistry profile: bundles the intrinsic contact angle and
+    functional-polymer particle size implied by each chemistry class.
+
+    Intrinsic contact angles and representative particle sizes are
+    literature-informed estimates; see README for sources.
+    """
+    key: str
+    label: str
+    intrinsic_ca_deg: float   # contact angle of a fully-coated DWR surface (°)
+    r_large_nm: float         # functional polymer particle radius (nm)
+    r_small_nm: float = 40.0  # carrier/surfactant particle radius (nm)
+    status: str = ""          # regulatory/sustainability summary
+    description: str = ""
+
+    def weave_params(self, base: "WeaveParameters") -> "WeaveParameters":
+        """Return a copy of *base* with intrinsic CA set for this chemistry."""
+        return dc_replace(base, intrinsic_contact_angle_deg=self.intrinsic_ca_deg)
+
+    def drying_params(self, base: DryingParameters) -> DryingParameters:
+        """Return a copy of *base* with particle sizes set for this chemistry."""
+        return dc_replace(base,
+                          r_large_m=self.r_large_nm * 1e-9,
+                          r_small_m=self.r_small_nm * 1e-9)
+
+
+CHEMISTRY_PROFILES: Dict[str, ChemistryProfile] = {
+    "c8": ChemistryProfile(
+        key="c8",
+        label="C8 Fluorocarbon",
+        intrinsic_ca_deg=120.0,
+        r_large_nm=110.0,
+        status="PFAS — banned / phased out",
+        description=(
+            "PFOA/PFOS-based chemistry. Highest performance ceiling; "
+            "banned in the EU since 2023 and under restriction globally."
+        ),
+    ),
+    "c6": ChemistryProfile(
+        key="c6",
+        label="C6 Fluorocarbon",
+        intrinsic_ca_deg=112.0,
+        r_large_nm=130.0,
+        status="PFAS — under regulation",
+        description=(
+            "Short-chain fluorocarbon (e.g. Archroma Smartrepel, "
+            "Capstone). Lower persistence than C8 but still a regulated "
+            "PFAS compound."
+        ),
+    ),
+    "silicone": ChemistryProfile(
+        key="silicone",
+        label="Silicone  (PFC-free)",
+        intrinsic_ca_deg=100.0,
+        r_large_nm=200.0,
+        status="PFC-free",
+        description=(
+            "Silicone-based DWR (e.g. Evonik Tegomer, Daikin Unidyne EX). "
+            "Larger particles increase the local Péclet number, compounding "
+            "the lower intrinsic contact angle."
+        ),
+    ),
+    "dendrimer": ChemistryProfile(
+        key="dendrimer",
+        label="Dendrimer / bio-wax  (PFC-free)",
+        intrinsic_ca_deg=95.0,
+        r_large_nm=160.0,
+        status="PFC-free",
+        description=(
+            "Dendrimer or bio-wax based DWR (e.g. Nikwax TX.Direct, "
+            "Grangers). Lowest intrinsic contact angle; adequate beading "
+            "requires careful processing control."
+        ),
+    ),
+}
 
 
 @dataclass
