@@ -38,17 +38,17 @@ PHI_VALUES = [0.020, 0.040, 0.060, 0.085, 0.105, 0.130]
 PHI_LABELS = ["2 %", "4 %", "6 %", "8.5 %", "10.5 %", "13 %"]
 
 EVAP_VALUES = list(np.geomspace(2e-8, 8e-7, 6))
-EVAP_LABELS = [f"{v*1e8:.1f}×10⁻⁸" for v in EVAP_VALUES]
-# More readable labels
-EVAP_LABELS = ["2e-8 m/s\n(very slow)", "6e-8 m/s", "2e-7 m/s",
-               "6e-7 m/s", "1e-6 m/s", "8e-7 m/s\n(fast)"]
-# Recompute cleanly
-EVAP_LABELS = []
-for v in EVAP_VALUES:
-    if v < 1e-7:
-        EVAP_LABELS.append(f"{v*1e8:.1f} ×10⁻⁸ m/s")
-    else:
-        EVAP_LABELS.append(f"{v*1e7:.1f} ×10⁻⁷ m/s")
+# Approximate temperature equivalents via vapour-pressure scaling (Clausius-Clapeyron)
+# relative to 20 °C. Labelled as approximate — real drying rate also depends on
+# airflow and garment geometry.
+EVAP_LABELS = [
+    "~20 °C  (line dry)",
+    "~30 °C  (warm air)",
+    "~40 °C  (gentle tumble)",
+    "~55 °C  (tumble low)",
+    "~65 °C  (tumble medium)",
+    "~80 °C  (tumble high)",
+]
 
 CRIMP_VALUES = [0.30, 0.50, 0.70]
 CRIMP_LABELS = ["Low — even film", "Medium — pooling", "High — crown drainage"]
@@ -532,7 +532,7 @@ footer {
     <span class="slider-value" id="lbl-crimp">—</span>
   </div>
   <div class="slider-row">
-    <span class="slider-label">Drying rate v<sub>evap</sub></span>
+    <span class="slider-label">Drying temperature (approx.)</span>
     <input type="range" id="sl-evap"  min="0" max="5" step="1" value="1">
     <span class="slider-value" id="lbl-evap">—</span>
   </div>
@@ -629,7 +629,7 @@ footer {
     <div class="map-title">Process Window &nbsp;(beading index)</div>
     <canvas id="process-canvas" width="580" height="460"></canvas>
     <div class="process-axes">
-      &rarr;&nbsp; Drying rate (slow → fast) &nbsp;&nbsp; &times; = current params<br>
+      &rarr;&nbsp; Drying temperature  20 °C → 80 °C &nbsp;&nbsp; &times; = current params<br>
       &uarr;&nbsp; Polymer loading (dilute → concentrated)
     </div>
   </div>
