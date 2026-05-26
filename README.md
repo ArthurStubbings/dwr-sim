@@ -14,6 +14,7 @@ No experimental DWR measurements were performed.
 
 | Version | What changed |
 |---|---|
+| **v1.2** | Wash durability model; per-chemistry degradation curves; live wash slider + sparkline in dashboard; fig7 |
 | **v1.1** | DWR chemistry comparison (C8 → C6 → silicone → dendrimer); chemistry selector in dashboard; fig6; parallel sweep |
 | **v1.0** | Initial release — 1D drying solver, plain-weave unit cell, interactive dashboard, 5 figures, technical report |
 
@@ -203,6 +204,25 @@ window and contact-angle maps update live.
 
 ![Chemistry comparison](figures/fig6_chemistry_comparison.png)
 
+### Wash durability: how many cycles before re-proofing?
+
+Each wash cycle mechanically abrades the DWR coating. Crowns — the exposed
+high points that contact other surfaces during tumble-washing — lose coating
+faster than the protected valleys. Combined with the chemistry's intrinsic
+substrate-bonding strength, this gives a per-chemistry degradation curve: how
+the beading index falls with wash count, and at what point re-proofing is
+needed (beading index < 0.4).
+
+The result is a **triple penalty** for PFC-free chemistries:
+1. Lower intrinsic contact angle (lower performance ceiling)
+2. Larger particle size → higher local Péclet number → more burial on crowns
+3. Weaker substrate bonding → faster wash degradation
+
+The dashboard wash slider applies degradation live — the coverage and
+contact-angle maps update per-pixel, showing crowns bleaching out first.
+
+![Wash durability](figures/fig7_wash_durability.png)
+
 ---
 
 ## Validation
@@ -252,6 +272,19 @@ relations.
   processing conditions but is not calibrated to a specific contact-angle
   measurement. Absolute contact-angle prediction would require fitting to
   experimental DWR data.
+- **Wash durability model is empirical, not mechanistic.** The per-wash
+  coverage loss follows a simple exponential decay weighted by local surface
+  height (crowns abrade faster). Real wash degradation involves tribological
+  contact mechanics, detergent chemistry, textile swelling, and
+  temperature-dependent bonding — none of which are modelled. The
+  `wash_durability_factor` values and crown abrasion coefficient (1.5×) are
+  physically motivated estimates, not fitted parameters. The relative ordering
+  of durability (C8 > C6 > silicone > dendrimer) is consistent with
+  industry experience, but the absolute wash counts should be treated as
+  illustrative rather than predictive.
+- **No detergent or re-orientation effects.** Detergents actively displace
+  DWR molecules; silicone-based chemistries can partially re-orient or
+  reflow between cycles ("self-healing"). Both are ignored.
 
 ### Natural extensions
 
@@ -264,8 +297,9 @@ relations.
   explicitly to viscosity, diffusivity, and film-formation threshold.
 - **Experimental calibration** — one spray/bead test at two drying temperatures
   would anchor the beading index to real contact-angle data.
-- **Multi-wash degradation** — extend the deposition model to track cumulative
-  coating loss over repeated wash/re-proof cycles.
+- **Mechanistic wash model** — replace the empirical exponential decay with
+  a tribology-informed abrasion model, and add detergent-concentration and
+  temperature dependence. Calibrate against experimental wash-cycle data.
 
 ---
 
@@ -279,7 +313,7 @@ cd src
 python test_drying_1d.py
 python test_weave_cell.py
 
-# Regenerate all 6 figures (fig5 process window ≈ 70 s, fig6 ≈ 120 s)
+# Regenerate all 7 figures (fig5 ≈ 70 s, fig6 ≈ 120 s, fig7 ≈ 30 s)
 python make_figures.py
 
 # Quick smoke test of the physics core
@@ -300,7 +334,7 @@ src/
                         + ChemistryProfile dataclass + CHEMISTRY_PROFILES
   test_drying_1d.py     6 physics-core tests
   test_weave_cell.py    6 textile-layer tests
-  make_figures.py       generates figures/fig1..6
+  make_figures.py       generates figures/fig1..7
   make_dashboard.py     precomputes 432-run sweep → index.html (GitHub Pages)
 figures/
   fig1_drying_profiles.png
@@ -309,6 +343,7 @@ figures/
   fig4_deposition.png
   fig5_process_window.png
   fig6_chemistry_comparison.png   (v1.1)
+  fig7_wash_durability.png        (v1.2)
 report/
   dwr_sim_report.pdf    short technical report (4–6 pages)
 requirements.txt        numpy, scipy, matplotlib, sympy

@@ -65,6 +65,7 @@ class ChemistryProfile:
     r_small_nm: float = 40.0  # carrier/surfactant particle radius (nm)
     status: str = ""          # regulatory/sustainability summary
     description: str = ""
+    wash_durability_factor: float = 0.03  # fractional coverage loss per wash (base rate)
 
     def weave_params(self, base: "WeaveParameters") -> "WeaveParameters":
         """Return a copy of *base* with intrinsic CA set for this chemistry."""
@@ -88,6 +89,7 @@ CHEMISTRY_PROFILES: Dict[str, ChemistryProfile] = {
             "PFOA/PFOS-based chemistry. Highest performance ceiling; "
             "banned in the EU since 2023 and under restriction globally."
         ),
+        wash_durability_factor=0.015,
     ),
     "c6": ChemistryProfile(
         key="c6",
@@ -100,6 +102,7 @@ CHEMISTRY_PROFILES: Dict[str, ChemistryProfile] = {
             "Capstone). Lower persistence than C8 but still a regulated "
             "PFAS compound."
         ),
+        wash_durability_factor=0.022,
     ),
     "silicone": ChemistryProfile(
         key="silicone",
@@ -112,6 +115,7 @@ CHEMISTRY_PROFILES: Dict[str, ChemistryProfile] = {
             "Larger particles increase the local Péclet number, compounding "
             "the lower intrinsic contact angle."
         ),
+        wash_durability_factor=0.040,
     ),
     "dendrimer": ChemistryProfile(
         key="dendrimer",
@@ -124,6 +128,7 @@ CHEMISTRY_PROFILES: Dict[str, ChemistryProfile] = {
             "Grangers). Lowest intrinsic contact angle; adequate beading "
             "requires careful processing control."
         ),
+        wash_durability_factor=0.060,
     ),
 }
 
@@ -374,6 +379,86 @@ def beading_performance_index(wp: WeaveParameters,
         "film_thickness": film_thickness,
         "pore_mask": pore_mask,
     }
+
+
+def apply_wash_cycles(coverage: np.ndarray,
+                      height: np.ndarray,
+                      durability_factor: float,
+                      n_washes: int,
+                      crown_abrasion: float = 1.5) -> np.ndarray:
+    """Coverage map after n_washes wash cycles.
+
+    Crowns (height ≈ 1) experience more mechanical abrasion than valleys
+    (height ≈ 0) because they are the exposed high points that contact other
+    surfaces during tumble-washing. The local loss rate per wash is:
+
+        loss[x,y] = durability_factor × (1 + crown_abrasion × height[x,y])
+
+    giving crowns (height=1) a loss rate of (1 + crown_abrasion) × base and
+    valleys (height=0) exactly the base rate.
+    """
+    if n_washes == 0:
+        return coverage.copy()
+    abrasion = 1.0 + crown_abrasion * height
+    loss_per_wash = np.clip(durability_factor * abrasion, 0.0, 0.99)
+    retained = (1.0 - loss_per_wash) ** n_washes
+    return coverage * retained
+
+
+def _beading_scalars_from_coverage(coverage: np.ndarray,
+                                   height: np.ndarray,
+                                   pore_mask: np.ndarray,
+                                   wp: WeaveParameters) -> tuple:
+    """(beading_index, crown_ca, valley_ca, mean_ca) from a coverage map."""
+    theta = cassie_baxter_contact_angle(coverage, wp)
+    beading = 1.0 / (1.0 + np.exp(-(theta - 90.0) / 8.0))
+    h = height.copy()
+    w = wp.crown_weight * h + (1.0 - wp.crown_weight) * (1.0 - h)
+    w[pore_mask] = 0.0
+    index = float((beading * w).sum() / (w.sum() + 1e-30))
+    surf = ~pore_mask
+    h_surf = height[surf]
+    crown_thr  = np.quantile(h_surf, 0.70)
+    valley_thr = np.quantile(h_surf, 0.30)
+    crown_band  = surf & (height >= crown_thr)
+    valley_band = surf & (height <= valley_thr)
+    return (index,
+            float(theta[crown_band].mean()),
+            float(theta[valley_band].mean()),
+            float(theta[surf].mean()))
+
+
+def wash_beading_curve(out: dict,
+                       wp: WeaveParameters,
+                       chemistry: ChemistryProfile,
+                       wash_counts) -> dict:
+    """Beading metrics at each entry of wash_counts.
+
+    Parameters
+    ----------
+    out : output of beading_performance_index
+    wp  : WeaveParameters (needed for Cassie-Baxter coefficients)
+    chemistry : ChemistryProfile (provides wash_durability_factor)
+    wash_counts : sequence of ints
+
+    Returns
+    -------
+    dict with keys 'bi', 'cca', 'vca', 'mca', each a list aligned to wash_counts.
+    """
+    bi_list, cca_list, vca_list, mca_list = [], [], [], []
+    for n in wash_counts:
+        cov = apply_wash_cycles(
+            out["coverage"], out["height"],
+            chemistry.wash_durability_factor, n,
+        )
+        bi, cca, vca, mca = _beading_scalars_from_coverage(
+            cov, out["height"], out["pore_mask"], wp,
+        )
+        bi_list.append(round(bi, 3))
+        cca_list.append(round(cca, 1))
+        vca_list.append(round(vca, 1))
+        mca_list.append(round(mca, 1))
+    return {"bi": bi_list, "cca": cca_list, "vca": vca_list, "mca": mca_list}
 
 
 if __name__ == "__main__":

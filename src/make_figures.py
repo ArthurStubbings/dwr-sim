@@ -24,6 +24,7 @@ from drying_1d import DryingParameters, solve_binary_drying
 from weave_cell import (
     WeaveParameters,
     beading_performance_index,
+    wash_beading_curve,
     CHEMISTRY_PROFILES,
 )
 
@@ -306,6 +307,77 @@ def fig6_chemistry_comparison():
     print("wrote", out)
 
 
+def fig7_wash_durability():
+    """Beading index vs wash cycles for all four DWR chemistry classes,
+    evaluated at each chemistry's near-optimal process conditions.
+
+    Shows the double penalty for PFC-free chemistries: they start lower
+    (narrower high-performance process window) and degrade faster (weaker
+    substrate bonding), reaching the re-proofing threshold in fewer washes.
+    The re-proofing threshold (BI = 0.4) is marked as a dashed line.
+    """
+    WASH_COUNTS = [0, 3, 6, 9, 12, 15, 18, 21, 25, 30]
+    REPROOF_THRESHOLD = 0.4
+
+    # Near-optimal conditions per chemistry: moderate-high loading, slow drying.
+    OPTIMAL_PHI  = {"c8": 0.09,  "c6": 0.10,  "silicone": 0.12,  "dendrimer": 0.13}
+    OPTIMAL_VEVAP= {"c8": 6e-8,  "c6": 6e-8,  "silicone": 4e-8,  "dendrimer": 4e-8}
+
+    STATUS_COLOR = {
+        "PFAS — banned / phased out": "#f87171",
+        "PFAS — under regulation":    "#fbbf24",
+        "PFC-free":                   "#34d399",
+    }
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+
+    line_styles = ["-", "--", "-.", ":"]
+    for ls, (key, ch) in zip(line_styles, CHEMISTRY_PROFILES.items()):
+        bp = DryingParameters(evap_velocity_m_s=OPTIMAL_VEVAP[key],
+                              phi_large_0=OPTIMAL_PHI[key],
+                              r_large_m=ch.r_large_nm * 1e-9)
+        wp = WeaveParameters(intrinsic_contact_angle_deg=ch.intrinsic_ca_deg)
+        out = beading_performance_index(wp, bp)
+        curve = wash_beading_curve(out, wp, ch, WASH_COUNTS)
+
+        col = STATUS_COLOR.get(ch.status, INK)
+        ax.plot(WASH_COUNTS, curve["bi"], ls, color=col, lw=2.0,
+                label=ch.label, marker="o", ms=4, mfc=col, mec=col)
+
+        # Annotate the threshold crossing
+        for i in range(1, len(WASH_COUNTS)):
+            if curve["bi"][i] < REPROOF_THRESHOLD:
+                # Linear interpolation to find exact crossing
+                bi0, bi1 = curve["bi"][i-1], curve["bi"][i]
+                w0,  w1  = WASH_COUNTS[i-1], WASH_COUNTS[i]
+                w_cross  = w0 + (REPROOF_THRESHOLD - bi0) / (bi1 - bi0) * (w1 - w0)
+                ax.axvline(w_cross, color=col, alpha=0.25, linewidth=0.8, linestyle=":")
+                ax.text(w_cross + 0.4, REPROOF_THRESHOLD + 0.02,
+                        f"{w_cross:.0f}",
+                        fontsize=8, color=col, va="bottom")
+                break
+
+    ax.axhline(REPROOF_THRESHOLD, color="0.5", linewidth=1.0, linestyle="--")
+    ax.text(WASH_COUNTS[-1] - 0.5, REPROOF_THRESHOLD + 0.02,
+            "re-proof threshold", fontsize=8, color="0.5", ha="right", va="bottom")
+
+    ax.set_xlim(0, WASH_COUNTS[-1])
+    ax.set_ylim(0, 1.0)
+    ax.set_xlabel("Wash cycles")
+    ax.set_ylabel("Beading index  (0–1)")
+    ax.set_title(
+        "Wash durability by DWR chemistry\n"
+        "PFC-free chemistries reach the re-proofing threshold in fewer washes",
+        fontweight="bold", color=INK,
+    )
+    ax.legend(frameon=False, fontsize=8.5, loc="upper right")
+    fig.tight_layout()
+    out_path = os.path.join(FIGDIR, "fig7_wash_durability.png")
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print("wrote", out_path)
+
+
 if __name__ == "__main__":
     fig1_drying_profiles()
     fig2_stratification_map()
@@ -313,4 +385,5 @@ if __name__ == "__main__":
     fig4_deposition()
     fig5_process_window()
     fig6_chemistry_comparison()
+    fig7_wash_durability()
     print("All figures written to", os.path.abspath(FIGDIR))

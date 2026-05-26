@@ -56,10 +56,13 @@ CRIMP_LABELS = ["Low — even film", "Medium — pooling", "High — crown drain
 CHEM_KEYS   = list(CHEMISTRY_PROFILES.keys())            # ['c8','c6','silicone','dendrimer']
 CHEM_LABELS = [CHEMISTRY_PROFILES[k].label for k in CHEM_KEYS]
 
+WASH_COUNTS = [0, 5, 10, 15, 20, 25, 30]
+
 N_PHI   = len(PHI_VALUES)
 N_EVAP  = len(EVAP_VALUES)
 N_CRIMP = len(CRIMP_VALUES)
 N_CHEM  = len(CHEM_KEYS)
+N_WASH  = len(WASH_COUNTS)
 N_TOTAL = N_CHEM * N_PHI * N_EVAP * N_CRIMP
 
 
@@ -85,10 +88,11 @@ def encode_bool_map(bool2d):
 # ── Parallel worker (must be module-level for multiprocessing pickling) ───────
 
 def _compute_run(args):
-    chem_key, phi, evap, crimp, vtc, base_film, map_grid = args
+    chem_key, phi, evap, crimp, vtc, base_film, map_grid, wash_counts = args
     import sys, os as _os
     sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-    from weave_cell import WeaveParameters, beading_performance_index, CHEMISTRY_PROFILES
+    from weave_cell import (WeaveParameters, beading_performance_index,
+                            CHEMISTRY_PROFILES, wash_beading_curve)
     from drying_1d import DryingParameters
     ch = CHEMISTRY_PROFILES[chem_key]
     wp = WeaveParameters(
@@ -102,13 +106,17 @@ def _compute_run(args):
         r_large_m=ch.r_large_nm * 1e-9,
     )
     out = beading_performance_index(wp, bp, fast=True)
+    wash_data = wash_beading_curve(out, wp, ch, wash_counts)
     return {
-        "bi":  round(float(out["beading_index"]), 3),
-        "cca": round(float(out["crown_contact_angle_deg"]), 1),
-        "vca": round(float(out["valley_contact_angle_deg"]), 1),
-        "mca": round(float(out["mean_contact_angle_deg"]), 1),
-        "cov": out["coverage"].copy(),
-        "ca":  out["contact_angle"].copy(),
+        "bi":       round(float(out["beading_index"]), 3),
+        "cca":      round(float(out["crown_contact_angle_deg"]), 1),
+        "vca":      round(float(out["valley_contact_angle_deg"]), 1),
+        "mca":      round(float(out["mean_contact_angle_deg"]), 1),
+        "cov":      out["coverage"].copy(),
+        "ca":       out["contact_angle"].copy(),
+        "bi_wash":  wash_data["bi"],
+        "cca_wash": wash_data["cca"],
+        "vca_wash": wash_data["vca"],
     }
 
 
@@ -137,7 +145,8 @@ def run_sweep():
             for ei, evap in enumerate(EVAP_VALUES):
                 for ci, crimp in enumerate(CRIMP_VALUES):
                     tasks.append((chem_key, phi, evap, crimp,
-                                  CRIMP_VTC[crimp], CRIMP_BASE_FILM[crimp], MAP_GRID))
+                                  CRIMP_VTC[crimp], CRIMP_BASE_FILM[crimp],
+                                  MAP_GRID, WASH_COUNTS))
                     order.append(run_idx(chi, pi, ei, ci))
 
     print(f"Running {N_TOTAL} evaluations in parallel (fast=True)…")
@@ -153,6 +162,10 @@ def run_sweep():
     mean_ca       = [0.0] * N_TOTAL
     coverage_b64  = [""] * N_TOTAL
     ca_raw        = [None] * N_TOTAL
+    # Wash curves: flat array indexed [run_idx * N_WASH + wash_level]
+    bi_by_wash  = [0.0] * (N_TOTAL * N_WASH)
+    cca_by_wash = [0.0] * (N_TOTAL * N_WASH)
+    vca_by_wash = [0.0] * (N_TOTAL * N_WASH)
 
     for res, idx in zip(results, order):
         beading_index[idx] = res["bi"]
@@ -161,6 +174,10 @@ def run_sweep():
         mean_ca[idx]       = res["mca"]
         coverage_b64[idx]  = encode_map(res["cov"], 0.0, 1.0)
         ca_raw[idx]        = res["ca"]
+        for w in range(N_WASH):
+            bi_by_wash [idx * N_WASH + w] = res["bi_wash"][w]
+            cca_by_wash[idx * N_WASH + w] = res["cca_wash"][w]
+            vca_by_wash[idx * N_WASH + w] = res["vca_wash"][w]
 
     # Global CA range across all chemistries for a consistent colormap.
     all_ca = np.concatenate([m.ravel() for m in ca_raw])
@@ -177,12 +194,13 @@ def run_sweep():
             "chem_labels":  CHEM_LABELS,
         },
         "chem_info": [
-            {"key":         k,
-             "label":       CHEMISTRY_PROFILES[k].label,
-             "intrinsic_ca": CHEMISTRY_PROFILES[k].intrinsic_ca_deg,
-             "r_large_nm":  CHEMISTRY_PROFILES[k].r_large_nm,
-             "status":      CHEMISTRY_PROFILES[k].status,
-             "description": CHEMISTRY_PROFILES[k].description}
+            {"key":                  k,
+             "label":                CHEMISTRY_PROFILES[k].label,
+             "intrinsic_ca":         CHEMISTRY_PROFILES[k].intrinsic_ca_deg,
+             "r_large_nm":           CHEMISTRY_PROFILES[k].r_large_nm,
+             "status":               CHEMISTRY_PROFILES[k].status,
+             "description":          CHEMISTRY_PROFILES[k].description,
+             "wash_durability":      CHEMISTRY_PROFILES[k].wash_durability_factor}
             for k in CHEM_KEYS
         ],
         "grid_size":     MAP_GRID,
@@ -192,10 +210,15 @@ def run_sweep():
         "n_evap":        N_EVAP,
         "n_crimp":       N_CRIMP,
         "n_chem":        N_CHEM,
+        "n_wash":        N_WASH,
+        "wash_counts":   WASH_COUNTS,
         "beading_index": beading_index,
         "crown_ca":      crown_ca,
         "valley_ca":     valley_ca,
         "mean_ca":       mean_ca,
+        "bi_by_wash":    bi_by_wash,
+        "cca_by_wash":   cca_by_wash,
+        "vca_by_wash":   vca_by_wash,
         "coverage_b64":  coverage_b64,
         "ca_b64":        ca_b64,
         "pore_b64":      pore_b64,
@@ -287,6 +310,34 @@ header .subtitle a { color: var(--accent); text-decoration: none; }
 .chem-btn:hover { border-color: var(--accent); }
 .chem-btn.on { border-color: var(--accent); background: rgba(74,158,255,.12); color: var(--white); }
 .chem-info { font-size: 9px; color: var(--dim); padding-left: 4px; }
+
+/* Durability panel */
+.durability-panel { min-width: 0; }
+.durability-panel .map-title { margin-bottom: 5px; }
+#durability-canvas {
+  display: block;
+  width: 100%;
+  height: clamp(155px, 26vh, 240px);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.durability-axes {
+  font-size: 9px;
+  color: var(--dim);
+  margin-top: 5px;
+  line-height: 1.8;
+}
+.wash-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+.wash-badge.good { background: rgba(52,211,153,.15); color: var(--good); }
+.wash-badge.warn { background: rgba(245,158,11,.15); color: var(--warn); }
+.wash-badge.bad  { background: rgba(248,113,113,.15); color: var(--bad); }
 
 /* Main viz row — flex:1 lets it absorb all remaining vertical space */
 .main-viz {
@@ -399,10 +450,10 @@ canvas.heatmap {
 }
 .ok-card.on { display: block; }
 
-/* Process + finding row */
+/* Process + durability + finding row */
 .bottom-row {
   display: grid;
-  grid-template-columns: 290px 1fr;
+  grid-template-columns: 290px 290px 1fr;
   gap: 20px;
   padding: 24px 28px 10px;
   border-top: 1px solid rgba(255,255,255,0.07);
@@ -484,6 +535,11 @@ footer {
     <span class="slider-label">Drying rate v<sub>evap</sub></span>
     <input type="range" id="sl-evap"  min="0" max="5" step="1" value="1">
     <span class="slider-value" id="lbl-evap">—</span>
+  </div>
+  <div class="slider-row">
+    <span class="slider-label">Wash cycles applied</span>
+    <input type="range" id="sl-wash" min="0" max="30" step="1" value="0">
+    <span class="slider-value" id="lbl-wash">0 washes</span>
   </div>
   <div class="chem-row">
     <span class="slider-label">DWR chemistry</span>
@@ -571,10 +627,19 @@ footer {
 
   <div class="process-panel">
     <div class="map-title">Process Window &nbsp;(beading index)</div>
-    <canvas id="process-canvas" width="60" height="40"></canvas>
+    <canvas id="process-canvas" width="580" height="460"></canvas>
     <div class="process-axes">
       &rarr;&nbsp; Drying rate (slow → fast) &nbsp;&nbsp; &times; = current params<br>
       &uarr;&nbsp; Polymer loading (dilute → concentrated)
+    </div>
+  </div>
+
+  <div class="durability-panel">
+    <div class="map-title">Wash Durability &nbsp;<span id="wash-to-reproof-badge"></span></div>
+    <canvas id="durability-canvas" width="580" height="460"></canvas>
+    <div class="durability-axes">
+      &rarr;&nbsp; Wash cycles (0 – 30) &nbsp;&nbsp; — = re-proof threshold<br>
+      &uarr;&nbsp; Beading index &nbsp;&nbsp; | = current wash count
     </div>
   </div>
 
@@ -688,7 +753,8 @@ function paintColorbar(canvas, colorStops) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const NP=DATA.n_phi, NE=DATA.n_evap, NC=DATA.n_crimp, NCH=DATA.n_chem;
-let iP=2, iE=1, iC=1, iCh=0;
+const NW=DATA.n_wash, WASH_COUNTS=DATA.wash_counts;
+let iP=2, iE=1, iC=1, iCh=0, iWash=0;
 
 function flatIdx(p,e,c,ch){ return ch*NP*NE*NC + p*NE*NC + e*NC + c; }
 
@@ -697,6 +763,129 @@ const STATUS_COLOR = {
   "PFAS — under regulation":    "#fbbf24",
   "PFC-free":                        "#34d399",
 };
+
+// ── Wash helpers ─────────────────────────────────────────────────────────────
+// Interpolate a precomputed wash curve at any wash value 0-30.
+function washInterp(flatCurve, runIdx, washVal) {
+  for (let i = 1; i < NW; i++) {
+    if (washVal <= WASH_COUNTS[i]) {
+      const lo = flatCurve[runIdx * NW + i - 1];
+      const hi = flatCurve[runIdx * NW + i];
+      const f  = (washVal - WASH_COUNTS[i-1]) / (WASH_COUNTS[i] - WASH_COUNTS[i-1]);
+      return lo + f * (hi - lo);
+    }
+  }
+  return flatCurve[runIdx * NW + NW - 1];
+}
+
+// Washes at which BI first drops below threshold (linear interp between stored points).
+// Returns null if never drops below, -1 if already below at wash=0.
+function washesToThreshold(runIdx, threshold) {
+  if (DATA.bi_by_wash[runIdx * NW] < threshold) return -1;
+  for (let i = 1; i < NW; i++) {
+    const bi = DATA.bi_by_wash[runIdx * NW + i];
+    if (bi < threshold) {
+      const bi_prev = DATA.bi_by_wash[runIdx * NW + i - 1];
+      const f = (threshold - bi_prev) / (bi - bi_prev);
+      return WASH_COUNTS[i-1] + f * (WASH_COUNTS[i] - WASH_COUNTS[i-1]);
+    }
+  }
+  return null;
+}
+
+// Apply wash degradation to a coverage uint8 array (client-side, per-pixel).
+const CROWN_ABRASION = 1.5;
+const BARE_CA_DEG    = 65.0;
+const BARE_CA_COS    = Math.cos(BARE_CA_DEG * Math.PI / 180);
+
+function applyWashToCoverage(covU8, heightU8, poreU8, durability, nWashes) {
+  const n = covU8.length;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (poreU8[i]) { out[i] = 0; continue; }
+    const h = heightU8[i] / 255;
+    const loss = durability * (1.0 + CROWN_ABRASION * h);
+    const retained = Math.pow(Math.max(0, 1.0 - Math.min(loss, 0.99)), nWashes);
+    out[i] = Math.round(covU8[i] * retained);
+  }
+  return out;
+}
+
+function recomputeCAMap(covU8, poreU8, intrinsicCA, caMin, caMax) {
+  const cosDWR = Math.cos(intrinsicCA * Math.PI / 180);
+  const n = covU8.length;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (poreU8[i]) { out[i] = 0; continue; }
+    const cov = covU8[i] / 255;
+    const cosEff = Math.max(-1, Math.min(1, cov * cosDWR + (1 - cov) * BARE_CA_COS));
+    const ca = Math.acos(cosEff) * 180 / Math.PI;
+    out[i] = Math.round(255 * Math.max(0, Math.min(1, (ca - caMin) / (caMax - caMin))));
+  }
+  return out;
+}
+
+// ── Durability sparkline ──────────────────────────────────────────────────────
+function paintDurabilitySparkline(runIdx, currentWash) {
+  const canvas = document.getElementById('durability-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const THRESHOLD = 0.4;
+  const maxWash = WASH_COUNTS[NW - 1];
+
+  // Background
+  ctx.fillStyle = 'rgba(22,32,48,0.7)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Threshold line
+  const ty = H * (1 - THRESHOLD);
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = 'rgba(245,158,11,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, ty); ctx.lineTo(W, ty); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Threshold label
+  ctx.fillStyle = 'rgba(245,158,11,0.7)';
+  ctx.font = '8px monospace';
+  ctx.fillText('re-proof', 2, ty - 3);
+
+  // BI curve
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = '#4a9eff';
+  ctx.beginPath();
+  for (let i = 0; i < NW; i++) {
+    const bi = DATA.bi_by_wash[runIdx * NW + i];
+    const x = (WASH_COUNTS[i] / maxWash) * W;
+    const y = H * (1 - bi);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Current wash marker
+  const cx = (currentWash / maxWash) * W;
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+
+  // Dot at current BI
+  const curBI = washInterp(DATA.bi_by_wash, runIdx, currentWash);
+  const cy = H * (1 - curBI);
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3.5, 0, 2 * Math.PI);
+  ctx.fillStyle = curBI >= 0.65 ? '#34d399' : curBI >= 0.4 ? '#f59e0b' : '#f87171';
+  ctx.fill();
+
+  // Axis ticks
+  ctx.fillStyle = 'rgba(90,112,144,0.8)';
+  ctx.font = '8px monospace';
+  ctx.fillText('0', 2, H - 2);
+  ctx.fillText('30', W - 16, H - 2);
+  ctx.fillText('1.0', 2, 10);
+  ctx.fillText('0', 2, H * 0.95);
+}
 
 // ── Process window ────────────────────────────────────────────────────────────
 // Bilinear interpolation to a finer grid for a smoother look.
@@ -758,9 +947,10 @@ function paintProcessWindow(iP, iE, iC, iCh) {
 // ── Update ────────────────────────────────────────────────────────────────────
 function update() {
   const idx = flatIdx(iP, iE, iC, iCh);
-  const bi  = DATA.beading_index[idx];
-  const cca = DATA.crown_ca[idx];
-  const vca = DATA.valley_ca[idx];
+  // Use wash-interpolated metrics when wash > 0.
+  const bi  = iWash === 0 ? DATA.beading_index[idx] : washInterp(DATA.bi_by_wash,  idx, iWash);
+  const cca = iWash === 0 ? DATA.crown_ca[idx]      : washInterp(DATA.cca_by_wash, idx, iWash);
+  const vca = iWash === 0 ? DATA.valley_ca[idx]     : washInterp(DATA.vca_by_wash, idx, iWash);
   const mca = DATA.mean_ca[idx];
 
   // Metrics
@@ -791,6 +981,7 @@ function update() {
   document.getElementById('lbl-phi').textContent   = DATA.params.phi_labels[iP];
   document.getElementById('lbl-evap').textContent  = DATA.params.evap_labels[iE];
   document.getElementById('lbl-crimp').textContent = DATA.params.crimp_labels[iC];
+  document.getElementById('lbl-wash').textContent  = iWash === 1 ? '1 wash' : `${iWash} washes`;
 
   // Chemistry info badge
   const ch = DATA.chem_info[iCh];
@@ -803,10 +994,33 @@ function update() {
   document.getElementById('ca-cmin').textContent = DATA.ca_min.toFixed(0)+'°';
   document.getElementById('ca-cmax').textContent = DATA.ca_max.toFixed(0)+'°';
 
-  // Maps
-  const pore = b64ToU8(DATA.pore_b64[iC]);
-  paintHeatmap(document.getElementById('cov-canvas'), b64ToU8(DATA.coverage_b64[idx]), MAGMA, pore);
-  paintHeatmap(document.getElementById('ca-canvas'),  b64ToU8(DATA.ca_b64[idx]),       DIVBR, pore);
+  // Maps — apply wash degradation client-side
+  const poreU8   = b64ToU8(DATA.pore_b64[iC]);
+  const heightU8 = b64ToU8(DATA.height_b64[iC]);
+  let covU8 = b64ToU8(DATA.coverage_b64[idx]);
+  let caU8  = b64ToU8(DATA.ca_b64[idx]);
+  if (iWash > 0) {
+    covU8 = applyWashToCoverage(covU8, heightU8, poreU8, ch.wash_durability, iWash);
+    caU8  = recomputeCAMap(covU8, poreU8, ch.intrinsic_ca, DATA.ca_min, DATA.ca_max);
+  }
+  paintHeatmap(document.getElementById('cov-canvas'), covU8, MAGMA, poreU8);
+  paintHeatmap(document.getElementById('ca-canvas'),  caU8,  DIVBR, poreU8);
+
+  // Durability sparkline + "washes to re-proof" badge
+  const reproof = washesToThreshold(idx, 0.4);
+  const badgeEl = document.getElementById('wash-to-reproof-badge');
+  if (reproof === null) {
+    badgeEl.textContent = '> 30 washes';
+    badgeEl.className = 'wash-badge good';
+  } else if (reproof < 0) {
+    badgeEl.textContent = 'poor initial coverage';
+    badgeEl.className = 'wash-badge bad';
+  } else {
+    const n = Math.round(reproof);
+    badgeEl.textContent = `re-proof after ~${n} wash${n===1?'':'es'}`;
+    badgeEl.className = 'wash-badge ' + (n >= 20 ? 'good' : n >= 10 ? 'warn' : 'bad');
+  }
+  paintDurabilitySparkline(idx, iWash);
 
   paintProcessWindow(iP, iE, iC, iCh);
 }
@@ -815,6 +1029,7 @@ function update() {
 document.getElementById('sl-phi').addEventListener('input',   function(){ iP=+this.value; update(); });
 document.getElementById('sl-evap').addEventListener('input',  function(){ iE=+this.value; update(); });
 document.getElementById('sl-crimp').addEventListener('input', function(){ iC=+this.value; update(); });
+document.getElementById('sl-wash').addEventListener('input',  function(){ iWash=+this.value; update(); });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 paintColorbar(document.getElementById('cov-cbar'), MAGMA);
