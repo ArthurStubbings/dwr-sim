@@ -660,6 +660,13 @@ footer {
       The process window (adequate loading + slow/cool drying) keeps local
       Péclet numbers low enough for diffusion to re-homogenise the deposit before
       the film collapses.
+      <br><br>
+      <em style="color:var(--dim)">
+        Note: drying temperature here refers to conditions <strong style="color:var(--text)">during
+        re-proofer application</strong>, not post-wash reactivation tumbling.
+        Heat applied to an already-dried coating re-orients polymer chains and
+        restores repellency — a separate solid-state effect not modelled here.
+      </em>
     </p>
   </div>
 

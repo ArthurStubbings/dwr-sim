@@ -285,6 +285,13 @@ relations.
 - **No detergent or re-orientation effects.** Detergents actively displace
   DWR molecules; silicone-based chemistries can partially re-orient or
   reflow between cycles ("self-healing"). Both are ignored.
+- **Drying temperature affects deposition, not reactivation.** The model
+  covers the *initial drying* of the wet re-proofer dispersion — higher
+  temperature means higher evaporation rate, higher local Péclet number,
+  and more polymer burial. This is distinct from post-wash *reactivation*
+  tumbling, where heat re-orients already-deposited polymer chains to
+  restore repellency. That is a solid-state polymer dynamics effect and is
+  not modelled here.
 
 ### Natural extensions
 
